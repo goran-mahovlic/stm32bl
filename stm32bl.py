@@ -215,7 +215,7 @@ class Stm32bl():
         """Gets the version and the allowed commands supported
         by the current version of the boot-loader"""
         self.log("CMD_GET", level=2)
-        res = self._send_command(self.CMD_GET, 13)
+        res = self._send_command(self.CMD_GET, 20)
         if len(res) - 2 != res[0]:
             raise UnexpectedAnswerException("CMD_GET command: wrong result length.")
         boot_version = self._convert_version(res[1])
