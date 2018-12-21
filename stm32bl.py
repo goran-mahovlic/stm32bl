@@ -153,7 +153,7 @@ class Stm32bl():
         self._serial_port.setRTS(1)
         self._reset_mcu()
 
-    def _talk(self, data_wr, cnt_rd, timeout=1):
+    def _talk(self, data_wr, cnt_rd, timeout=1, wait=0):
         """talk with boot-loader"""
         if isinstance(data_wr, (tuple, list)):
             xor = data_wr[0]
@@ -163,6 +163,8 @@ class Stm32bl():
         else:
             data_wr = [data_wr, data_wr ^ 0xff]
         self._write(data_wr)
+        if wait:
+          time.sleep(wait)
         res = self._read(cnt_rd, timeout=timeout)
         if not res:
             raise NoAnswerException("No answer.")
@@ -181,9 +183,9 @@ class Stm32bl():
             raise NoAckCommandException("NoACK for command.")
         return res[1:-1]
 
-    def _send_data(self, data, cnt_rd=None, timeout=1):
+    def _send_data(self, data, cnt_rd=None, timeout=1, wait=0):
         """send command to boot-loader"""
-        res = self._talk(data, 1, timeout=timeout)
+        res = self._talk(data, 1, timeout=timeout, wait=wait)
         if res[0] != self.CMD_ACK:
             raise NoAckDataException("NoACK for data.")
         if cnt_rd is not None:
@@ -252,7 +254,7 @@ class Stm32bl():
         self.log("CMD_READ_MEMORY(%08x, %d)" % (address, length), level=2)
         self._send_command(self.CMD_READ_MEMORY)
         self._send_data(self._convert_32bit(address))
-        return self._send_data(length - 1, length)
+        return self._send_data(length - 1, length, wait=0.005)
 
     def cmd_go(self, address):
         """Jumps to user application code located in the internal
@@ -267,7 +269,7 @@ class Stm32bl():
         self.log("CMD_WRITE_MEMORY(%08x, %d)" % (address, len(data)), level=2)
         self._send_command(self.CMD_WRITE_MEMORY)
         self._send_data(self._convert_32bit(address))
-        return self._send_data([len(data) - 1] + data)
+        return self._send_data([len(data) - 1] + data, wait=0.005)
 
     def _cmd_erase(self, pages=0xff):
         """Erases from one to all the Flash memory pages"""
@@ -293,7 +295,7 @@ class Stm32bl():
                 data += self._convert_16bit(page)
         else:
             data = self._convert_16bit(0xffff)
-        self._send_data(data, timeout=20)
+        self._send_data(data, timeout=20, wait=0.050)
 
     def cmd_write_protect(self, sectors):
         """Enables the write protection for some sectors"""
