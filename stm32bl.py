@@ -271,14 +271,14 @@ class Stm32bl():
 
     def _cmd_erase(self, pages=0xff):
         """Erases from one to all the Flash memory pages"""
-        self.log("CMD_ERASE(%d)" % pages, level=2)
-        self._send_command(self.CMD_ERASE)
+        self.log("CMD_ERASE(%s)" % str(pages), level=2)
         if isinstance(pages, (list, tuple)):
             data = [len(pages) - 1]
             for page in pages:
                 data.append(page)
         else:
             data = pages
+        self._send_command(self.CMD_ERASE)
         self._send_data(data, timeout=20)
 
     def _cmd_extended_erase(self, pages=0xffff):
