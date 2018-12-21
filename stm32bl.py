@@ -475,6 +475,7 @@ def main():
             stm32bl.cmd_go(address)
         if args.reset:
             stm32bl.exit_bootloader()
+        stm32bl.log("done", 'STM32BL', level=1)
     except Stm32BLException as err:
         print("ERROR: %s" % err)
 
