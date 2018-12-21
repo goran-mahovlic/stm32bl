@@ -419,7 +419,7 @@ def main():
     parser.add_argument('-v', '--verbose', action='count', help="increase verbosity *", default=0)
     parser.add_argument('-p', '--port', help="Serial port eg: /dev/ttyS0 or COM1", required=True)
     parser.add_argument('-b', '--baud', help="Baud-rate (9600 - 115200)", default=115200)
-    parser.add_argument('-a', '--address', help="Set address for reading or writing")
+    parser.add_argument('-a', '--address', action='append', help="Set address for reading or writing")
     parser.add_argument('-s', '--size', help="Set size for reading")
     parser.add_argument('-r', '--read', help="Read content of memory to file")
     parser.add_argument('-d', '--dump', action='store_true', help="Dump content of memory")
@@ -434,7 +434,15 @@ def main():
     parser.add_argument('-R', '--read-protect', action='store_true', help="Read Protect")
     parser.add_argument('-T', '--read-unprotect', action='store_true', help="Read unprotect")
     args = parser.parse_args()
-    address = int(args.address, 0) if args.address is not None else Stm32bl.FLASH_START
+
+    # Add support for multiple writes
+    # convert args.address (array of strings) onto addresses (array of numbers), or use flash start if no address provided
+    addresses = [int(args.address[i],0) for i in range(0,len(args.address))] if args.address is not None else [Stm32bl.FLASH_START]
+    if args.write and len(args.write) != len(addresses):
+        print("Please specify a consistent number of -a and -w options")
+        return 1
+    # by defalt use the first address
+    address = addresses[0]
     size = int(args.size, 0) if args.size is not None else None
 
     try:
@@ -455,7 +463,8 @@ def main():
         elif args.erase_block:
             stm32bl.erase_blocks(args.erase_block)
         if args.write:
-            stm32bl.write_file(address, args.write[0], args.verify)
+            for i in range(0,len(addresses)):
+                stm32bl.write_file(addresses[i], args.write[i], args.verify)
         if args.write_protect:
             stm32bl.cmd_write_protect(args.write_protect)
         if args.read_protect:
