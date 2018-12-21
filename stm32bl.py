@@ -3,6 +3,8 @@
 import time
 import argparse
 import serial
+import os
+import fcntl
 
 
 VERSION_STR = "stm32bl v0.0.0"
@@ -62,17 +64,7 @@ class Stm32bl():
 
     FLASH_START = 0x08000000
 
-    def __init__(self, port, baudrate=19200, verbosity=1):
-        try:
-            self._serial_port = serial.Serial(
-                port=port,
-                baudrate=baudrate,
-                parity=serial.PARITY_EVEN,
-                stopbits=1,
-                timeout=1
-            )
-        except (FileNotFoundError, serial.serialutil.SerialException):
-            raise SerialException("Error opening serial port: %s" % port)
+    def __init__(self, verbosity=1):
         self._verbosity = verbosity
         self._connect(5)
         self._allowed_commands = [self.CMD_GET, ]
@@ -113,40 +105,6 @@ class Stm32bl():
             msg += '%s: ' % operation
         msg += message
         print(msg)
-
-    def _write(self, data):
-        """Write data to serial port"""
-        self.log(":".join(['%02x' % d for d in data]), 'WR', level=3)
-        self._serial_port.write(bytes(data))
-
-    def _read(self, cnt=1, timeout=1):
-        """Read data from serial port"""
-        data = []
-        while not data and timeout > 0:
-            data = list(self._serial_port.read(cnt))
-            timeout -= 1
-        self.log(":".join(['%02x' % d for d in data]), 'RD', level=3)
-        return data
-
-    def _reset_mcu(self):
-        """Reset MCU"""
-        self._serial_port.setDTR(0)
-        time.sleep(0.1)
-        self._serial_port.setDTR(1)
-        time.sleep(0.2)
-
-    def _connect(self, repeat=1):
-        """connect to boot-loader"""
-        self.log("Connecting to boot-loader", level=1)
-        self._serial_port.setRTS(0)
-        self._reset_mcu()
-        while repeat:
-            self._write([self.CMD_INIT])
-            ret = self._read()
-            if ret and ret[0] in (self.CMD_ACK, self.CMD_NOACK):
-                return
-            repeat -= 1
-        raise ConnectingException("Can't connect to MCU boot-loader.")
 
     def exit_bootloader(self):
         """Exit boot-loader and restart MCU"""
@@ -223,20 +181,6 @@ class Stm32bl():
         # update list of allowed commands
         self._allowed_commands = res[2:]
         return boot_version
-
-    def _cmd_get_version(self):
-        """Gets the boot-loader version and the Read Protection
-        status of the Flash memory"""
-        self.log("CMD_GET_VERSION", level=2)
-        res = self._send_command(self.CMD_GET_VERSION, 3)
-        if len(res) != 3:
-            raise UnexpectedAnswerException("CMD_GET_VERSION: wrong length of result")
-        boot_version = self._convert_version(res[0])
-        if boot_version != self._boot_version:
-            raise UnexpectedAnswerException("Version between GET and GET_VERSION are different.")
-        option_bytes = res[1:]
-        self.log(":".join(['%02x' % i for i in option_bytes]), 'OPTION_BYTES', level=1)
-        return option_bytes
 
     def _cmd_get_id(self):
         """Gets the chip ID"""
@@ -414,13 +358,134 @@ class Stm32bl():
         self._cmd_extended_erase(blocks)
 
 
+class Stm32serialbl(Stm32bl):
+    def __init__(self, port, baudrate=19200, verbosity=1):
+        try:
+            self._serial_port = serial.Serial(
+                port=port,
+                baudrate=baudrate,
+                parity=serial.PARITY_EVEN,
+                stopbits=1,
+                timeout=1
+            )
+        except (FileNotFoundError, serial.serialutil.SerialException):
+            raise SerialException("Error opening serial port: %s" % port)
+        super().__init__(verbosity)
+
+    def _reset_mcu(self):
+        """Reset MCU"""
+        self._serial_port.setDTR(0)
+        time.sleep(0.1)
+        self._serial_port.setDTR(1)
+        time.sleep(0.2)
+
+    def _connect(self, repeat=1):
+        """connect to boot-loader"""
+        self.log("Connecting to boot-loader", level=1)
+        self._serial_port.setRTS(0)
+        self._reset_mcu()
+        while repeat:
+            self._write([self.CMD_INIT])
+            ret = self._read()
+            if ret and ret[0] in (self.CMD_ACK, self.CMD_NOACK):
+                return
+            repeat -= 1
+        raise ConnectingException("Can't connect to MCU boot-loader.")
+
+    def _write(self, data):
+        """Write data to serial port"""
+        self.log(":".join(['%02x' % d for d in data]), 'WR', level=3)
+        self._serial_port.write(bytes(data))
+
+    def _read(self, cnt=1, timeout=1):
+        """Read data from serial port"""
+        data = []
+        while not data and timeout > 0:
+            data = list(self._serial_port.read(cnt))
+            timeout -= 1
+        self.log(":".join(['%02x' % d for d in data]), 'RD', level=3)
+        return data
+
+    def _cmd_get_version(self):
+        """Gets the boot-loader version and the Read Protection
+        status of the Flash memory"""
+        self.log("CMD_GET_VERSION", level=2)
+        res = self._send_command(self.CMD_GET_VERSION, 3)
+        if len(res) != 3:
+            raise UnexpectedAnswerException("CMD_GET_VERSION: wrong length of result")
+        boot_version = self._convert_version(res[0])
+        if boot_version != self._boot_version:
+            raise UnexpectedAnswerException("Version between GET and GET_VERSION are different.")
+        option_bytes = res[1:]
+        self.log(":".join(['%02x' % i for i in option_bytes]), 'OPTION_BYTES', level=1)
+        return option_bytes
+
+class Stm32i2cbl(Stm32bl):
+    def __init__(self, i2c_device, i2c_slave, verbosity=1):
+        I2C_SLAVE = 0x703
+        try:
+            self._i2c_fd = os.open(i2c_device, os.O_RDWR)
+        except (OsError):
+            raise SerialException("Error opening i2c device: %s" % i2c_device)
+        fcntl.ioctl(self._i2c_fd, I2C_SLAVE, i2c_slave)
+        super().__init__(verbosity)
+
+    def _connect(self, repeat=1):
+        """connect to boot-loader"""
+        self.log("Connecting to boot-loader", level=1)
+        return
+
+    def _write(self, data):
+        """Write data to i2c device"""
+        self.log(":".join(['%02x' % d for d in data]), 'WR', level=3)
+        os.write(self._i2c_fd, bytes(data))
+
+    def _read(self, cnt=1, timeout=5):
+        """Read data from i2c device"""
+        data = b''
+        if cnt == 1:
+            reads = [1]
+        elif cnt == 2:
+            reads = [1, 1]
+        elif cnt >= 3:
+            reads = [1, cnt-2, 1]
+
+        while not data and timeout > 0:
+            for i in reads:
+                try:
+                    data += os.read(self._i2c_fd, i)
+                except OSError:
+                    time.sleep(0.01)
+                timeout -= 1
+        self.log(":".join(['%02x' % d for d in data]), 'RD', level=3)
+        return data
+
+    def _cmd_get_version(self):
+        """Gets the boot-loader version and the Read Protection
+        status of the Flash memory"""
+        self.log("CMD_GET_VERSION", level=2)
+        res = self._send_command(self.CMD_GET_VERSION, 1)
+        if len(res) != 1:
+            raise UnexpectedAnswerException("CMD_GET_VERSION: wrong length of result")
+        boot_version = self._convert_version(res[0])
+        if boot_version != self._boot_version:
+            raise UnexpectedAnswerException("Version between GET and GET_VERSION are different.")
+        option_bytes = res[1:]
+        self.log(":".join(['%02x' % i for i in option_bytes]), 'OPTION_BYTES', level=1)
+        return option_bytes
+
+    def _reset_mcu(self):
+        pass
+
 def main():
     """Main application"""
     parser = argparse.ArgumentParser(description=DESCRIPTION_STR)
     parser.add_argument('-V', '--version', action='version', version=VERSION_STR)
     parser.add_argument('-v', '--verbose', action='count', help="increase verbosity *", default=0)
-    parser.add_argument('-p', '--port', help="Serial port eg: /dev/ttyS0 or COM1", required=True)
+    parser.add_argument('-p', '--port', help="Serial port eg: /dev/ttyS0 or COM1", required=False)
     parser.add_argument('-b', '--baud', help="Baud-rate (9600 - 115200)", default=115200)
+    parser.add_argument('-i', '--i2c-device', help="i2c device eg: /dev/i2c-1", required=False)
+    parser.add_argument('-I', '--i2c-slave', help="i2c slave address eg: 0x48", default=0x48)
     parser.add_argument('-a', '--address', action='append', help="Set address for reading or writing")
     parser.add_argument('-s', '--size', help="Set size for reading")
     parser.add_argument('-r', '--read', help="Read content of memory to file")
@@ -448,7 +513,14 @@ def main():
     size = int(args.size, 0) if args.size is not None else None
 
     try:
-        stm32bl = Stm32bl(port=args.port, baudrate=args.baud, verbosity=args.verbose)
+        # Instantiate the appropriate device class (i2c or serial)
+        if args.i2c_device:
+            stm32bl = Stm32i2cbl(i2c_device=args.i2c_device, i2c_slave=args.i2c_slave, verbosity=args.verbose)
+        elif args.port:
+            stm32bl = Stm32serialbl(port=args.port, baudrate=args.baud, verbosity=args.verbose)
+        else:
+          print("ERROR: either i2c or serial port must be specified")
+          return 1
         if args.read_unprotect:
             stm32bl.cmd_readout_unprotect()
         if args.write_unprotect:
