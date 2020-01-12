@@ -72,7 +72,7 @@ class Stm32flasher():
     def __init__(self, port, baudrate=115200, verbosity=1):
         try:
             #.init(9600, bits=8, parity=None, stop=1)
-            self._serial_port = UART(port, baudrate, bits=8, parity=0, stop=1, tx=25, rx=26)
+            self._serial_port = UART(port, baudrate, bits=8, parity=None, stop=1, tx=25, rx=26)
 #            self._serial_port.flush()
             #serial.Serial(
             #    port=port,
