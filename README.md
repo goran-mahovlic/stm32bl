@@ -1,3 +1,8 @@
+# Micropython version stm32flasher.py
+import stm32flasher
+stm32bl = stm32flasher.Stm32flasher(1, 115200,5)
+stm32bl.write_file(0x8000000,"firmware.bin")
+
 # STM32BL
 STM32 MCU serial firmware loader.
 
