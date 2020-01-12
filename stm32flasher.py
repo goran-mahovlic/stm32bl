@@ -3,8 +3,6 @@
 # Mycropython test >> Should return :DEV_ID: 0410
 
 #import stm32flasher
-#address = 0x00
-#size = 1
 #stm32bl = stm32flasher.Stm32flasher(1, 115200,5)
 
 import time
@@ -72,7 +70,7 @@ class Stm32flasher():
     def __init__(self, port, baudrate=115200, verbosity=1):
         try:
             #.init(9600, bits=8, parity=None, stop=1)
-            self._serial_port = UART(port, baudrate, bits=8, parity=None, stop=1, tx=25, rx=26)
+            self._serial_port = UART(port, baudrate, bits=8, parity=1, stop=1, tx=25, rx=26)
 #            self._serial_port.flush()
             #serial.Serial(
             #    port=port,
@@ -150,7 +148,7 @@ class Stm32flasher():
         time.sleep(0.1)
     #    self._serial_port.setDTR(1)
         reset.value(1)
-        time.sleep(0.2)
+        time.sleep(0.1)
 
     def _connect(self, repeat=1):
         """connect to boot-loader"""
@@ -233,7 +231,7 @@ class Stm32flasher():
         """Gets the version and the allowed commands supported
         by the current version of the boot-loader"""
         self.log("CMD_GET", level=2)
-        res = self._send_command(self.CMD_GET, 20)
+        res = self._send_command(self.CMD_GET, 13)
         if len(res) - 2 != res[0]:
             raise UnexpectedAnswerException("CMD_GET command: wrong result length.")
         boot_version = self._convert_version(res[1])
